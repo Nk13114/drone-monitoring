@@ -1,0 +1,86 @@
+import cv2
+import pytesseract
+import time
+import requests
+
+# Load pre-trained YOLO model for object detection (assuming weights and config are already available)
+net = cv2.dnn.readNet("yolov4.weights", "yolov4.cfg")
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+
+# Setting up video stream (assuming drone's camera feed URL is provided)
+video_stream_url = "http://drone-camera-feed-url"  # Replace with actual drone camera feed URL
+cap = cv2.VideoCapture(video_stream_url)
+
+# Function to detect vehicles and recognize license plates
+def detect_violations_and_recognize_plate(frame):
+    height, width, _ = frame.shape
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outs = net.forward(output_layers)
+
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = scores.argmax()
+            confidence = scores[class_id]
+            if confidence > 0.5 and class_id == 2:  # class_id for vehicle
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+                
+                # Draw bounding box around detected vehicle
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                
+                # Extract license plate (this is a simplified approach)
+                license_plate = frame[y:y+h, x:x+w]
+                plate_text = pytesseract.image_to_string(license_plate, config='--psm 8')
+                
+                # Display recognized license plate text
+                cv2.putText(frame, plate_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                
+                # Issue challan if violation is detected (e.g., speeding or signal jump)
+                issue_challan(plate_text, "Speeding")  # Replace with detected violation type
+
+# Function to issue challan (placeholder for integration with central database)
+def issue_challan(license_plate, violation_type):
+    print(f"Issuing challan to {license_plate} for {violation_type}")
+    # Code to send challan info to a server or database can go here
+
+# Function to detect accidents (basic collision detection, can be expanded)
+def detect_accidents(frame):
+    # Placeholder function: Implement actual accident detection logic here
+    # e.g., by monitoring abrupt changes in motion or vehicle behavior
+    accident_detected = False  # Replace with actual logic
+    if accident_detected:
+        alert_emergency_services()
+
+# Function to alert emergency services
+def alert_emergency_services():
+    print("Accident detected! Alerting emergency services...")
+    # Send alert to server or app
+    requests.post("http://emergency-alert-endpoint.com", json={"alert": "Accident detected", "location": "GPS coordinates"})
+
+# Main loop to process video frames
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    # Detect violations and recognize license plates
+    detect_violations_and_recognize_plate(frame)
+    
+    # Detect accidents
+    detect_accidents(frame)
+    
+    # Show video frame (for testing purposes)
+    cv2.imshow("Drone Surveillance", frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
